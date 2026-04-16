@@ -26,7 +26,7 @@ async def whitelist(link, value: bool):
     return await annotate(link, whitelisted=value)
 
 
-async def set_eligibility(link, eligibility, reason):
+async def set_eligibility(link, eligibility, reason=None):
     if eligibility == 'default':
         return await annotate(link, eligibility='default')
 

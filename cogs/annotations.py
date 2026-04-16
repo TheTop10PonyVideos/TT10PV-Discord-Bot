@@ -34,12 +34,21 @@ class Annotating(commands.Cog):
         else:
             ma = data['manual_label']
             upload_date = datetime.fromisoformat(data['upload_date']).strftime('%b %d, %Y')
+            description = [
+                f'**Upload Date:** {upload_date}',
+                f'**Duration:** {data['duration'] // 60}m {data['duration'] % 60}s',
+                f'**Whitelisted:** {data['whitelisted']}'
+            ]
+
+            if res.get('reupload_of'):
+                o_data = data['video_metadata']
+                description.append(f'**Reupload Of:** [[{o_data['platform']}] {o_data['title']}]({res['reupload_of']})')
 
             embed = Embed(
                 color=Color.blurple(),
                 title=f'[{data['platform']}] {data['title']}',
                 url=link,
-                description=f'**Upload Date**: {upload_date}\n**Duration**: {data['duration'] // 60}m {data['duration'] % 60}s\n**Whitelisted**: {data['whitelisted']}'
+                description='\n'.join(description)
             ).set_image(
                 url=data['thumbnail']
             ).add_field(
@@ -67,7 +76,7 @@ class Annotating(commands.Cog):
         res = await set_reupload(link, original_link)
         
         await interaction.response.send_message(
-            f'`[{res.reupload_platform}] {res.reupload_title}`\nset as a reupload of\n{res.original_platform} {res.original_title}',
+            f'`[{res.reupload_platform}] {res.reupload_title}`\nset as a reupload of\n`[{res.original_platform}] {res.original_title}`',
             ephemeral=True
         )
 
@@ -93,7 +102,7 @@ class Annotating(commands.Cog):
 
     @app_commands.command(description='Remove any manual eligibility setting for a video')
     async def reset_eligibility(self, interaction: Interaction, link: str):
-        res = await set_eligibility(link, link, 'default')
+        res = await set_eligibility(link, 'default')
 
         await interaction.response.send_message(
             f'`[{res.platform}] {res.title}`\nwill use automatically determined eligibility',
