@@ -6,11 +6,13 @@ class APIError(Exception):
 class AnnotationResponse():
     def __init__(
         self,
+        video_id: str,
         platform: str,
         title: str
     ):
-        self.title = title
+        self.video_id = video_id
         self.platform = platform
+        self.title = title
         
 
 class SetReuploadResponse():

@@ -22,7 +22,7 @@ async def annotate(link, **kwargs):
         raise APIError(f'Request error: {e}')
 
 
-async def whitelist(link, value: bool):
+async def whitelist(link, value: bool = True):
     return await annotate(link, whitelisted=value)
 
 
@@ -51,7 +51,7 @@ async def set_reupload(reupload_link, original_link):
         raise APIError(f'Request error: {e}')
 
 
-async def validate(link):
+async def get_video_data(link):
     try:
         async with session.post(
             f'{server_api_url}/ballot/validate?all_data=true',
@@ -61,7 +61,13 @@ async def validate(link):
                 text = await response.text()
                 raise APIError(f'Validation failure: {response.status} - {text}')
 
-            return await response.json()
+            response = await response.json()
+
+            # Allowing possible KeyErrors since a result only matters if video data is present
+            video_data = response['video_data']
+            video_data['annotations'] = response['field_flags']
+
+            return video_data
 
     except ClientError as e:
         raise APIError(f'Request error: {e}')

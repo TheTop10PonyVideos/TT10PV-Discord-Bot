@@ -1,6 +1,14 @@
 from discord.ext import commands
 from typing import Literal, override
 from datetime import datetime
+from bot import Bot
+from bot.whitelist_scheduling import (
+    SuccessView,
+    RejectedView,
+    update_post,
+    unschedule_whitelist,
+    check_post_exist
+)
 from discord import (
     app_commands,
     Interaction,
@@ -11,18 +19,18 @@ from server_actions.annotations import (
     whitelist,
     set_eligibility,
     set_reupload,
-    validate
+    get_video_data
 )
 
 
 class Annotating(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: Bot):
         self.bot = bot
 
 
     @app_commands.command(description='Get the metadata and annotations associated with a video')
     async def get_details(self, interaction: Interaction, link: str):
-        res = await validate(link)
+        res = await get_video_data(link)
         data = res.get('video_data')
 
         if not data:
@@ -64,6 +72,14 @@ class Annotating(commands.Cog):
     @app_commands.command(description='Set whether the video can appear in the form search results. Default value is \'True\'')
     async def set_whitelist(self, interaction: Interaction, link: str, value: bool = True):
         res = await whitelist(link, value)
+        video_key = (res.platform, res.video_id)
+
+        post = await check_post_exist(video_key)
+
+        if post:
+            await unschedule_whitelist(video_key)
+
+            await update_post(post, SuccessView() if value else RejectedView())
 
         await interaction.response.send_message(
             f'`[{res.platform}] {res.title}`\n{'added to' if value else 'removed from'} the whitelist',
