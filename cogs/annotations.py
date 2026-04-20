@@ -1,7 +1,7 @@
 from discord.ext import commands
 from typing import Literal, override
 from datetime import datetime
-from bot import Bot
+from bot import Bot, permissions
 from bot.whitelist_scheduling import (
     SuccessView,
     RejectedView,
@@ -70,6 +70,7 @@ class Annotating(commands.Cog):
 
 
     @app_commands.command(description='Set whether the video can appear in the form search results. Default value is \'True\'')
+    @permissions.series_staff()
     async def set_whitelist(self, interaction: Interaction, link: str, value: bool = True):
         res = await whitelist(link, value)
         video_key = (res.platform, res.video_id)
@@ -88,6 +89,7 @@ class Annotating(commands.Cog):
 
 
     @app_commands.command(description='Makes the form suggest using the original video\'s link when the reupload is voted for')
+    @permissions.series_staff()
     async def set_reupload(self, interaction: Interaction, link: str, original_link: str):
         res = await set_reupload(link, original_link)
         
@@ -98,6 +100,7 @@ class Annotating(commands.Cog):
 
 
     @app_commands.command(description='Dissociates the video as being a reupload of another')
+    @permissions.series_staff()
     async def reset_reupload(self, interaction: Interaction, link: str):
         res = await set_reupload(link, None)
 
@@ -108,6 +111,7 @@ class Annotating(commands.Cog):
 
 
     @app_commands.command(description='Manually set the eligibility of a video and a reason for it')
+    @permissions.administrator()
     async def set_eligibility(self, interaction: Interaction, link: str, eligibility: Literal['eligible', 'ineligible'], reason: str):
         res = await set_eligibility(link, eligibility, reason)
 
@@ -117,6 +121,7 @@ class Annotating(commands.Cog):
         )
 
     @app_commands.command(description='Remove any manual eligibility setting for a video')
+    @permissions.administrator()
     async def reset_eligibility(self, interaction: Interaction, link: str):
         res = await set_eligibility(link, 'default')
 
@@ -128,7 +133,10 @@ class Annotating(commands.Cog):
 
     @override
     async def cog_app_command_error(self, interaction, error):
-        await interaction.response.send_message(str(error), ephemeral=True)
+        if isinstance(error, app_commands.CheckFailure):
+            await interaction.response.send_message('Missing permissions to use this command', ephemeral=True)
+        else:
+            await interaction.response.send_message(str(error), ephemeral=True)
 
 
 async def setup(bot):
