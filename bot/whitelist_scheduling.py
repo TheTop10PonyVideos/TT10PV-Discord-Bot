@@ -1,3 +1,4 @@
+from config import Roles
 from server_actions.annotations import whitelist
 from bot import Bot, emoji
 from discord import (
@@ -32,7 +33,15 @@ async def try_whitelist(interaction: Interaction, value=True):
     await interaction.response.edit_message(embed=embed, view=view)
 
 
-class MainView(ui.View):
+class PermissionedView(ui.View):
+    async def interaction_check(self, interaction):
+        return (
+            interaction.user.guild_permissions.administrator
+            or any(role.id in (Roles.MODERATOR, Roles.SERIES_STAFF) for role in interaction.user.roles)
+        )
+
+
+class MainView(PermissionedView):
     def __init__(self, video_key):
         super().__init__(timeout=None)
         self.key = video_key

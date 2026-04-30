@@ -30,13 +30,12 @@ class Annotating(commands.Cog):
 
     @app_commands.command(description='Get the metadata and annotations associated with a video')
     async def get_details(self, interaction: Interaction, link: str):
-        res = await get_video_data(link)
-        data = res.get('video_data')
+        data = await get_video_data(link)
 
         if not data:
             embed = Embed(
                 color=Color.red(),
-                description='\n'.join(map(lambda a: a['details'], res['field_flags']))
+                description='\n'.join(map(lambda a: a['details'], data['annotations']))
             )
 
         else:
@@ -48,9 +47,9 @@ class Annotating(commands.Cog):
                 f'**Whitelisted:** {data['whitelisted']}'
             ]
 
-            if res.get('reupload_of'):
+            if data.get('reupload_of'):
                 o_data = data['video_metadata']
-                description.append(f'**Reupload Of:** [[{o_data['platform']}] {o_data['title']}]({res['reupload_of']})')
+                description.append(f'**Reupload Of:** [[{o_data['platform']}] {o_data['title']}]({data['reupload_of']})')
 
             embed = Embed(
                 color=Color.blurple(),
@@ -61,7 +60,7 @@ class Annotating(commands.Cog):
                 url=data['thumbnail']
             ).add_field(
                 name='Annotations',
-                value='\n\n'.join(f'**[{a['type']}]**\n{a['details']}' for a in res['field_flags']) if ma is None else f'[{ma['label']}]\n{ma['content']}'
+                value='\n\n'.join(f'**[{a['type']}]**\n{a['details']}' for a in data['annotations']) if ma is None else f'[{ma['label']}]\n{ma['content']}'
             ).set_footer(
                 text=f'Uploaded to {data['platform']} by {data['uploader']}'
             )
