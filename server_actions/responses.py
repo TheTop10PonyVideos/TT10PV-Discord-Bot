@@ -27,11 +27,3 @@ class SetReuploadResponse():
         self.reupload_platform = reupload_platform
         self.original_title = original_title
         self.original_platform = original_platform
-
-
-# TODO
-class ValidationResponse():
-    def __init__(
-            self
-        ):
-        pass

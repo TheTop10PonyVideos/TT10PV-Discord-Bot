@@ -161,7 +161,7 @@ async def schedule_whitelist(video_data, timeout: int):
     priority = ['eligible', 'ineligible', 'maybe ineligible']
 
     for t in priority:
-        if any(ann.type == t for ann in video_data['annotations']):
+        if any(ann['type'] == t for ann in video_data['annotations']):
             eligibility = t
             break
     else:

@@ -1,12 +1,12 @@
 from config import server_api_url, server_auth_key
-from server_actions.client import session
+from server_actions import client
 from server_actions.responses import *
 from aiohttp import ClientError
 
 
 async def annotate(link, **kwargs):
     try:
-        async with session.post(
+        async with client.session.post(
             f'{server_api_url}/pool/annotate_video',
             json = { 'link': link, **kwargs },
             headers = { 'Cookie': f'uid={server_auth_key}' }
@@ -35,7 +35,7 @@ async def set_eligibility(link, eligibility, reason=None):
 
 async def set_reupload(reupload_link, original_link):
     try:
-        async with session.post(
+        async with client.session.post(
             f'{server_api_url}/pool/set_reupload',
             json = { 'reupload_link': reupload_link, 'original_link': original_link },
             headers = { 'Cookie': f'uid={server_auth_key}' }
@@ -53,7 +53,7 @@ async def set_reupload(reupload_link, original_link):
 
 async def get_video_data(link):
     try:
-        async with session.post(
+        async with client.session.post(
             f'{server_api_url}/ballot/validate?all_data=true',
             json = { 'link': link }
         ) as response:
