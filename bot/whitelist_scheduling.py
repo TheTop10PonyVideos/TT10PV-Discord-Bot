@@ -17,10 +17,11 @@ scheduled_whitelists: dict[tuple, asyncio.Task] = {}
 
 
 async def try_whitelist(interaction: Interaction, value=True):
+    """Attempt to set a searchable value a video via button interaction, and update its view accordingly"""
     embed = interaction.message.embeds[0].copy()
 
     try:
-        await whitelist(embed.url)
+        await whitelist(embed.url, value)
 
         embed.description = 'Whitelisted ' + emoji.pinkie_affirm if value else 'Not whitelisted'
         view = SuccessView() if value else RejectedView()
@@ -29,11 +30,13 @@ async def try_whitelist(interaction: Interaction, value=True):
         print(e)
         embed.description = ('Failed to whitelist ' if value else 'Failed to undo whitelist ') + emoji.pinkie_PANIC_AHHH_WTF
         view = FailView(value)
-    
+
     await interaction.response.edit_message(embed=embed, view=view)
 
 
 class PermissionedView(ui.View):
+    """A view that checks a users permissions before allowing any interaction callbacks to run"""
+
     async def interaction_check(self, interaction):
         return (
             interaction.user.guild_permissions.administrator
