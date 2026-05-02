@@ -1,6 +1,8 @@
-from config import Roles
+from config import Roles, schedule_cache_path
 from server_actions.annotations import whitelist
 from bot import Bot, emoji
+from app_types import WLScheduleEntry
+from typing import Literal
 from discord import (
     ButtonStyle,
     Embed,
@@ -9,15 +11,14 @@ from discord import (
     NotFound,
     ui
 )
-import asyncio, time
+import asyncio, time, json
 
 
-whitelist_post_ids = {}
-scheduled_whitelists: dict[tuple, asyncio.Task] = {}
+whitelist_schedule: dict[tuple, WLScheduleEntry | Literal['pending']] = {}
 
 
 async def try_whitelist(interaction: Interaction, value=True):
-    """Attempt to set a searchable value a video via button interaction, and update its view accordingly"""
+    """Attempt to set a searchable value for a video via button interaction, and update its view accordingly"""
     embed = interaction.message.embeds[0].copy()
 
     try:
@@ -50,7 +51,8 @@ class MainView(PermissionedView):
         self.key = video_key
     
     @ui.button(label='Whitelist', emoji='📜', style=ButtonStyle.primary)
-    async def whitelist(self, interaction: Interaction, btn: ui.Button):        
+    async def whitelist(self, interaction: Interaction, btn: ui.Button): 
+        unschedule_whitelist(self.key)       
         await try_whitelist(interaction)
 
     @ui.button(label='Reject', emoji='❌', style=ButtonStyle.primary)
@@ -105,29 +107,24 @@ async def update_post(post: Message, view: SuccessView | RejectedView | FailView
     await post.edit(embed=embed, view=view)
 
 
-async def check_post_exist(video_key):
-    post_id = whitelist_post_ids.get(video_key)
-
+async def get_post(post_id):
+    """Get the Message object using its id if it exists, or None if it was not found"""
     if post_id is None:
-        scheduled_task = scheduled_whitelists.get(video_key)
-
-        if scheduled_task is not None:
-            scheduled_task.cancel()
-            del scheduled_whitelists[video_key]
-
-        return False
+        return
 
     try:
         return await Bot.instance.output_channel.fetch_message(post_id)
     except NotFound:
-        return False
+        return
 
 
 async def delay_whitelist(video_key, link, timeout):
     await asyncio.sleep(timeout)
-    del scheduled_whitelists[video_key]
 
-    post = await check_post_exist(video_key)
+    wl_entry = whitelist_schedule[video_key]
+    del whitelist_schedule[video_key]
+
+    post = await get_post(wl_entry['post_id'])
 
     if not post:
         return
@@ -144,18 +141,21 @@ async def delay_whitelist(video_key, link, timeout):
 
 async def schedule_whitelist(video_data, timeout: int):
     video_key = (video_data['platform'], video_data['video_id'])
-    existing_post = whitelist_post_ids.get(video_key)
+    existing_entry = whitelist_schedule.get(video_key)
 
-    if existing_post is not None:
-        if existing_post == 'pending':
+    if existing_entry is not None:
+        if existing_entry == 'pending':
             return # post is already about to be made
 
-        post = await check_post_exist(video_key)
+        post = await get_post(video_key)
 
         if post:
-            return # already scheduled or rejected
+            return # already scheduled and post still exists
 
-    whitelist_post_ids[video_key] = 'pending'
+        # Cancel the previous task since the post for it was deleted or not found
+        existing_entry['task'].cancel()
+
+    whitelist_schedule[video_key] = 'pending'
 
     # eligible first since that only comes from manual checks
     priority = ['eligible', 'ineligible', 'maybe ineligible']
@@ -185,11 +185,48 @@ async def schedule_whitelist(video_data, timeout: int):
 
     post = await Bot.instance.output_channel.send(embed=embed, view=MainView(video_key))
 
-    whitelist_post_ids[video_key] = post.id
-    scheduled_whitelists[video_key] = asyncio.create_task(delay_whitelist(video_key, video_data['link'], timeout))
+    whitelist_schedule[video_key] = {
+        'link': video_data['link'],
+        'post_id': post.id,
+        'task': asyncio.create_task(delay_whitelist(video_key, video_data['link'], timeout)),
+        'timestamp': whitelist_timestamp
+    }
 
 
 def unschedule_whitelist(video_key):
-    if task := scheduled_whitelists.get(video_key):
-        task.cancel()
-        del scheduled_whitelists[video_key]
+    if entry := whitelist_schedule.get(video_key):
+        del whitelist_schedule[video_key]
+        
+        if entry != 'pending':
+            entry['task'].cancel()
+
+
+def load_schedule_cache():
+    global whitelist_schedule
+
+    if schedule_cache_path.exists():
+        with open(schedule_cache_path, 'r', encoding='utf8') as file:
+            cache = json.load(file)
+
+        cache = [[tuple(entry['key']), entry['link'], entry['post_id'], entry['timestamp']] for entry in cache]
+
+        for key, link, post_id, timestamp in cache:
+            now = int(time.time)
+
+            if timestamp > now:
+                continue
+
+            whitelist_schedule[key] = {
+                'link': link,
+                'post_id': post_id,
+                'task': asyncio.create_task(delay_whitelist(key, link, now - timestamp)),
+                'timestamp': timestamp
+            }
+
+
+def save_schedule_cache():
+    with open(schedule_cache_path, 'w', encoding='utf8') as file:
+        json.dump(
+            [{ 'key': key, 'post_id': entry['post_id'], 'timestamp': entry['timestamp'] } for key, entry in whitelist_schedule.items()],
+            file
+        )

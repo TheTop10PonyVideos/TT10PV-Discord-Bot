@@ -7,7 +7,7 @@ from bot.whitelist_scheduling import (
     RejectedView,
     update_post,
     unschedule_whitelist,
-    check_post_exist
+    get_post
 )
 from discord import (
     app_commands,
@@ -70,15 +70,14 @@ class Annotating(commands.Cog):
 
     @app_commands.command(description='Set whether the video can appear in the form search results. Default value is \'True\'')
     @permissions.series_staff()
-    async def set_whitelist(self, interaction: Interaction, link: str, value: bool = True):
+    async def set_searchable(self, interaction: Interaction, link: str, value: bool = True):
         res = await whitelist(link, value)
         video_key = (res.platform, res.video_id)
 
-        post = await check_post_exist(video_key)
+        post = await get_post(video_key)
+        unschedule_whitelist(video_key)
 
         if post:
-            await unschedule_whitelist(video_key)
-
             await update_post(post, SuccessView() if value else RejectedView())
 
         await interaction.response.send_message(
