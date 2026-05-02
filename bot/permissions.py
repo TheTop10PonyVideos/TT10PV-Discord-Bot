@@ -25,3 +25,13 @@ def series_staff():
         )
 
     return check(predicate)
+
+
+class PermissionMixin:
+    """Checks a users permissions before allowing a button interaction's callback to run"""
+
+    async def interaction_check(self, interaction: Interaction):
+        return (
+            interaction.user.guild_permissions.administrator
+            or any(role.id in (Roles.MODERATOR, Roles.SERIES_STAFF) for role in interaction.user.roles)
+        )

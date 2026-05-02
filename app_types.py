@@ -3,6 +3,7 @@ from asyncio import Task
 
 
 class WLScheduleEntry(TypedDict):
+    link: str
     post_id: str
-    task: Task
+    task: Task | None
     timestamp: int

@@ -1,20 +1,23 @@
 from config import Roles, schedule_cache_path
 from server_actions.annotations import whitelist
-from bot import Bot, emoji
+from bot import emoji
 from app_types import WLScheduleEntry
 from typing import Literal
+from discord.ui import Button, DynamicItem, View, button
+from bot.permissions import PermissionMixin
 from discord import (
     ButtonStyle,
     Embed,
     Interaction,
     Message,
     NotFound,
-    ui
+    TextChannel
 )
-import asyncio, time, json
+import asyncio, time, json, re
 
 
 whitelist_schedule: dict[tuple, WLScheduleEntry | Literal['pending']] = {}
+output_channel: TextChannel = None
 
 
 async def try_whitelist(interaction: Interaction, value=True):
@@ -35,62 +38,103 @@ async def try_whitelist(interaction: Interaction, value=True):
     await interaction.response.edit_message(embed=embed, view=view)
 
 
-class PermissionedView(ui.View):
-    """A view that checks a users permissions before allowing any interaction callbacks to run"""
-
-    async def interaction_check(self, interaction):
-        return (
-            interaction.user.guild_permissions.administrator
-            or any(role.id in (Roles.MODERATOR, Roles.SERIES_STAFF) for role in interaction.user.roles)
-        )
-
-
-class MainView(PermissionedView):
+class MainView(View):
     def __init__(self, video_key):
         super().__init__(timeout=None)
-        self.key = video_key
-    
-    @ui.button(label='Whitelist', emoji='📜', style=ButtonStyle.primary)
-    async def whitelist(self, interaction: Interaction, btn: ui.Button): 
-        unschedule_whitelist(self.key)       
+        self.add_item(WhitelistButton(video_key))
+        self.add_item(RejectButton(video_key))
+
+class WhitelistButton(PermissionMixin, DynamicItem, template=r'whitelist:(?P<platform>[^:]+):(?P<vid_id>.+)'):
+    def __init__(self, video_key):
+        self.video_key = video_key
+        platform, vid_id = video_key
+
+        super().__init__(
+            Button(
+                label='Whitelist',
+                emoji='📜',
+                style=ButtonStyle.primary,
+                custom_id=f'whitelist:{platform}:{vid_id}',
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(cls, interaction: Interaction, item: Button, match: re.Match[str]):
+        return cls((match['platform'], match['vid_id']))
+
+    async def callback(self, interaction: Interaction):
+        unschedule_whitelist(self.video_key)
         await try_whitelist(interaction)
 
-    @ui.button(label='Reject', emoji='❌', style=ButtonStyle.primary)
-    async def reject(self, interaction: Interaction, btn: ui.Button):
-        unschedule_whitelist(self.key)
+class RejectButton(PermissionMixin, DynamicItem, template=r'reject:(?P<platform>[^:]+):(?P<vid_id>.+)'):
+    def __init__(self, video_key):
+        self.video_key = video_key
+        platform, vid_id = video_key
 
-        embed = interaction.message.embeds[0]
-        embed.description = 'Not whitelisted'
+        super().__init__(
+            Button(
+                label='Reject',
+                emoji='❌',
+                style=ButtonStyle.primary,
+                custom_id=f'reject:{platform}:{vid_id}',
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(cls, interaction: Interaction, item: Button, match: re.Match[str]):
+        return cls((match['platform'], match['vid_id']))
+
+    async def callback(self, interaction: Interaction):
+        unschedule_whitelist(self.video_key)
+
+        embed = interaction.message.embeds[0].copy()
+        embed.description = "Not whitelisted"
 
         await interaction.response.edit_message(embed=embed, view=RejectedView())
 
 
-class SuccessView(ui.View):
+class SuccessView(PermissionMixin, View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @ui.button(label='Undo', emoji='◀️', style=ButtonStyle.primary)
-    async def undo(self, interaction: Interaction, btn: ui.Button):
+    @button(label='Undo', emoji='◀️', style=ButtonStyle.primary, custom_id='undo_whitelist')
+    async def undo(self, interaction, btn):
         await try_whitelist(interaction, False)
 
 
-class FailView(ui.View):
+class RejectedView(PermissionMixin, View):
+    def __init__(self):
+        super().__init__(timeout=None)
+    
+    @button(label='Whitelist', emoji='📜', style=ButtonStyle.primary, custom_id=f'whitelist')
+    async def callback(self, interaction: Interaction):
+        await try_whitelist(interaction)
+
+
+class FailView(View):
     def __init__(self, whitelisting: bool):
         super().__init__(timeout=None)
         self.whitelisting = whitelisting
+        self.add_item(RetryButton(whitelisting))
 
-    @ui.button(label='Retry', emoji='🔄')
-    async def retry(self, interaction: Interaction, btn: ui.Button):
+class RetryButton(PermissionMixin, DynamicItem, template=r'retry:(?P<value>True|False)'):
+    def __init__(self, whitelisting: bool):
+        self.whitelisting = whitelisting
+
+        super().__init__(
+            Button(
+                label='Retry',
+                emoji='🔄',
+                custom_id=f'retry:{whitelisting}',
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(cls, interaction: Interaction, item: Button, match: re.Match[str]):
+        return cls(match['value'] == 'True')
+
+    async def callback(self, interaction: Interaction):
         await try_whitelist(interaction, self.whitelisting)
-
-
-class RejectedView(ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @ui.button(label='Whitelist', emoji='📜', style=ButtonStyle.primary)
-    async def whitelist(self, interaction: Interaction, btn: ui.Button):
-        await try_whitelist(interaction)
 
 
 async def update_post(post: Message, view: SuccessView | RejectedView | FailView):
@@ -113,7 +157,7 @@ async def get_post(post_id):
         return
 
     try:
-        return await Bot.instance.output_channel.fetch_message(post_id)
+        return await output_channel.fetch_message(post_id)
     except NotFound:
         return
 
@@ -147,13 +191,14 @@ async def schedule_whitelist(video_data, timeout: int):
         if existing_entry == 'pending':
             return # post is already about to be made
 
-        post = await get_post(video_key)
+        post = await get_post(existing_entry['post_id'])
 
         if post:
             return # already scheduled and post still exists
 
         # Cancel the previous task since the post for it was deleted or not found
-        existing_entry['task'].cancel()
+        if existing_entry['task'] is not None:
+            existing_entry['task'].cancel()
 
     whitelist_schedule[video_key] = 'pending'
 
@@ -177,13 +222,13 @@ async def schedule_whitelist(video_data, timeout: int):
         url=video_data['thumbnail']
     ).add_field(
         name=eligibility.title(),
-        value='\n'.join(f'- {ann.trigger}' for ann in video_data['annotations']) or '- No issues found'
+        value='\n'.join(f'- {ann['trigger']}' for ann in video_data['annotations']) or '- No issues found'
     ).set_footer(
         text=f'By {video_data['uploader']} on {video_data['platform']}'
     )
 
 
-    post = await Bot.instance.output_channel.send(embed=embed, view=MainView(video_key))
+    post = await output_channel.send(embed=embed, view=MainView(video_key))
 
     whitelist_schedule[video_key] = {
         'link': video_data['link'],
@@ -194,11 +239,11 @@ async def schedule_whitelist(video_data, timeout: int):
 
 
 def unschedule_whitelist(video_key):
-    if entry := whitelist_schedule.get(video_key):
-        del whitelist_schedule[video_key]
-        
-        if entry != 'pending':
-            entry['task'].cancel()
+    entry = whitelist_schedule.get(video_key)
+
+    if entry and entry != 'pending' and entry['task'] is not None:
+        entry['task'].cancel()
+        entry['task'] = None
 
 
 def load_schedule_cache():
@@ -211,15 +256,17 @@ def load_schedule_cache():
         cache = [[tuple(entry['key']), entry['link'], entry['post_id'], entry['timestamp']] for entry in cache]
 
         for key, link, post_id, timestamp in cache:
-            now = int(time.time)
+            remaing_time = timestamp - int(time.time())
 
-            if timestamp > now:
-                continue
+            if remaing_time < -60 * 60 * 24 * 32: # Just over 1 month
+                continue # Stop keeping track of old posts
+
+            # TODO: update post when remaining_time < 0
 
             whitelist_schedule[key] = {
                 'link': link,
                 'post_id': post_id,
-                'task': asyncio.create_task(delay_whitelist(key, link, now - timestamp)),
+                'task': None if remaing_time < 0 else asyncio.create_task(delay_whitelist(key, link, remaing_time)),
                 'timestamp': timestamp
             }
 
@@ -227,6 +274,14 @@ def load_schedule_cache():
 def save_schedule_cache():
     with open(schedule_cache_path, 'w', encoding='utf8') as file:
         json.dump(
-            [{ 'key': key, 'post_id': entry['post_id'], 'timestamp': entry['timestamp'] } for key, entry in whitelist_schedule.items()],
+            [
+                { 'key': key, 'link': entry['link'], 'post_id': entry['post_id'], 'timestamp': entry['timestamp'] }
+                for key, entry in whitelist_schedule.items()
+                if entry != 'pending'
+            ],
             file
         )
+
+def set_output_channel(channel):
+    global output_channel
+    output_channel = channel
