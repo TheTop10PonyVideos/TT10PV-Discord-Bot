@@ -17,7 +17,8 @@ class Bot(commands.Bot):
 
         await self.tree.sync()
 
-        ws.set_output_channel(await self.fetch_channel(output_channel_id))
+        Bot.output_channel = await self.fetch_channel(output_channel_id)
+        ws.set_output_channel(Bot.output_channel)
 
         for view in (ws.SuccessView, ws.RejectedView):
             self.add_view(view())

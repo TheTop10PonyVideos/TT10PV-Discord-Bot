@@ -11,7 +11,8 @@ from discord import (
     Interaction,
     Message,
     NotFound,
-    TextChannel
+    TextChannel,
+    User
 )
 import asyncio, time, json, re
 
@@ -26,16 +27,12 @@ async def try_whitelist(interaction: Interaction, value=True):
 
     try:
         await whitelist(embed.url, value)
-
-        embed.description = 'Whitelisted ' + emoji.pinkie_affirm if value else 'Not whitelisted'
         view = SuccessView() if value else RejectedView()
-
     except Exception as e:
         print(e)
-        embed.description = ('Failed to whitelist ' if value else 'Failed to undo whitelist ') + emoji.pinkie_PANIC_AHHH_WTF
         view = FailView(value)
-
-    await interaction.response.edit_message(embed=embed, view=view)
+    
+    await update_post(interaction.message, view, interaction.user)
 
 
 class MainView(View):
@@ -87,10 +84,7 @@ class RejectButton(PermissionMixin, DynamicItem, template=r'reject:(?P<platform>
     async def callback(self, interaction: Interaction):
         unschedule_whitelist(self.video_key)
 
-        embed = interaction.message.embeds[0].copy()
-        embed.description = "Not whitelisted"
-
-        await interaction.response.edit_message(embed=embed, view=RejectedView())
+        await update_post(interaction.message, RejectedView(), interaction.user)
 
 
 class SuccessView(PermissionMixin, View):
@@ -137,7 +131,7 @@ class RetryButton(PermissionMixin, DynamicItem, template=r'retry:(?P<value>True|
         await try_whitelist(interaction, self.whitelisting)
 
 
-async def update_post(post: Message, view: SuccessView | RejectedView | FailView):
+async def update_post(post: Message, view: SuccessView | RejectedView | FailView, user: User = None):
     embed = post.embeds[0].copy()
 
     match view:
@@ -148,11 +142,16 @@ async def update_post(post: Message, view: SuccessView | RejectedView | FailView
         case FailView():
             embed.description = ('Failed to whitelist ' if view.whitelisting else 'Failed to undo whitelist ') + emoji.pinkie_PANIC_AHHH_WTF
 
+    if user is not None:
+        embed.description += f'\nBy {user.mention}'
+
     await post.edit(embed=embed, view=view)
 
 
-async def get_post(post_id):
+async def get_post(video_key):
     """Get the Message object using its id if it exists, or None if it was not found"""
+    post_id = whitelist_schedule.get(video_key, {}).get('post_id')
+
     if post_id is None:
         return
 
@@ -164,13 +163,10 @@ async def get_post(post_id):
 
 async def delay_whitelist(video_key, link, timeout):
     await asyncio.sleep(timeout)
-
-    wl_entry = whitelist_schedule[video_key]
-    del whitelist_schedule[video_key]
-
-    post = await get_post(wl_entry['post_id'])
+    post = await get_post(video_key)
 
     if not post:
+        del whitelist_schedule[video_key]
         return
 
     try:
@@ -191,7 +187,7 @@ async def schedule_whitelist(video_data, timeout: int):
         if existing_entry == 'pending':
             return # post is already about to be made
 
-        post = await get_post(existing_entry['post_id'])
+        post = await get_post(video_key)
 
         if post:
             return # already scheduled and post still exists
