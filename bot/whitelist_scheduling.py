@@ -23,6 +23,7 @@ output_channel: TextChannel = None
 
 async def try_whitelist(interaction: Interaction, value=True):
     """Attempt to set a searchable value for a video via button interaction, and update its view accordingly"""
+    await interaction.response.defer()
     embed = interaction.message.embeds[0].copy()
 
     try:
@@ -31,7 +32,7 @@ async def try_whitelist(interaction: Interaction, value=True):
     except Exception as e:
         print(e)
         view = FailView(value)
-    
+
     await update_post(interaction.message, view, interaction.user)
 
 
