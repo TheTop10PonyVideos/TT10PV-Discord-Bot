@@ -21,6 +21,10 @@ from server_actions.annotations import (
     set_reupload,
     get_video_data
 )
+from config import (
+    target_guild_id,
+    output_channel_id
+)
 
 
 class Annotating(commands.Cog):
@@ -86,57 +90,70 @@ class Annotating(commands.Cog):
 
         if post:
             await update_post(post, SuccessView() if value else RejectedView(), interaction.user)
-        else:
-            await Bot.output_channel.send(
-                embed=Embed(
-                    title=res.title,
-                    url=link,
-                    description=f'{prefix} whitelist by {interaction.user.mention}',
-                    color=Color.blurple()
+
+            if interaction.channel == Bot.output_channel:
+                await interaction.response.send_message(
+                    f'Updated whitelist status of https://discordapp.com/channels/{target_guild_id}/{output_channel_id}/{post.id}',
+                    ephemeral=True
                 )
+            else:
+                await interaction.response.send_message(
+                    f'`[{res.platform}] {res.title}`\n{prefix} whitelist',
+                    ephemeral=True
+                )
+        else:
+            embed = Embed(
+                title=res.title,
+                url=link,
+                description=f'{prefix} whitelist',
+                color=Color.blurple()
             )
 
-        if interaction.channel != Bot.output_channel:
-            await interaction.response.send_message(
-                f'`[{res.platform}] {res.title}`\n{prefix} whitelist',
-                ephemeral=True
-            )
+            if interaction.channel == Bot.output_channel:
+                await interaction.response.send_message(embed=embed)
+            else:
+                embed.description += f' by {interaction.user.mention}'
+                await Bot.output_channel.send(embed=embed)
 
 
     @app_commands.command(description='Makes the form suggest using the original video\'s link when the reupload is voted for')
     @permissions.series_staff()
     async def set_reupload(self, interaction: Interaction, link: str, original_link: str):
         res = await set_reupload(link, original_link)
-
-        await Bot.output_channel.send(
-            embed=Embed(
-                description=f'### [{res.reupload_title}]({link}) -> [{res.original_title}]({original_link})\nReupload set by {interaction.user.mention}',
-                color=Color.blurple()
-            )
+        embed = Embed(
+            description=f'### [{res.reupload_title}]({link}) -> [{res.original_title}]({original_link})\nReupload set',
+            color=Color.blurple()
         )
 
-        if interaction.channel != Bot.output_channel:
+        if interaction.channel == Bot.output_channel:
+            await interaction.response.send_message(embed=embed)
+        else:
+            embed.description += f' by {interaction.user.mention}'
+
+            await Bot.output_channel.send(embed=embed)
             await interaction.response.send_message(
                 f'`[{res.reupload_platform}] {res.reupload_title}`\nset as a reupload of\n`[{res.original_platform}] {res.original_title}`',
                 ephemeral=True
             )
 
-
     @app_commands.command(description='Dissociates the video as being a reupload of another')
     @permissions.series_staff()
     async def reset_reupload(self, interaction: Interaction, link: str):
         res = await set_reupload(link, None)
-
-        await Bot.output_channel.send(
-            embed=Embed(
-                title=res.reupload_title,
-                url=link,
-                description=f'Reupload reset by {interaction.user.mention}',
-                color=Color.blurple()
-            )
+        embed = Embed(
+            title=res.reupload_title,
+            url=link,
+            description=f'Marked as not a reupload',
+            color=Color.blurple()
         )
 
-        if interaction.channel != Bot.output_channel:
+
+        if interaction.channel == Bot.output_channel:
+            await interaction.response.send_message(embed=embed)
+        else:
+            embed.description += f' by {interaction.user.mention}'
+
+            await Bot.output_channel.send(embed=embed)
             await interaction.response.send_message(
                 f'`[{res.reupload_platform}] {res.reupload_title}`\nwill not be treated as a reupload',
                 ephemeral=True
@@ -147,17 +164,19 @@ class Annotating(commands.Cog):
     @permissions.administrator()
     async def set_eligibility(self, interaction: Interaction, link: str, eligibility: Literal['eligible', 'ineligible'], reason: str):
         res = await set_eligibility(link, eligibility, reason)
-
-        await Bot.output_channel.send(
-            embed=Embed(
-                title=res.title,
-                url=link,
-                description=f'Marked [{eligibility.title()}]\n\"{reason}\"\n\nBy {interaction.user.mention}',
-                color=Color.blurple()
-            )
+        embed = Embed(
+            title=res.title,
+            url=link,
+            description=f'Marked [{eligibility.title()}]\n\"{reason}\"',
+            color=Color.blurple()
         )
 
-        if interaction.channel != Bot.output_channel:
+        if interaction.channel == Bot.output_channel:
+            await interaction.response.send_message(embed=embed)
+        else:
+            embed.description += f'\n\nBy {interaction.user.mention}'
+
+            await Bot.output_channel.send(embed=embed)
             await interaction.response.send_message(
                 f'`[{res.platform}] {res.title}`\nmarked as {eligibility} with the following reason\n```{reason}```',
                 ephemeral=True
@@ -167,17 +186,19 @@ class Annotating(commands.Cog):
     @permissions.administrator()
     async def reset_eligibility(self, interaction: Interaction, link: str):
         res = await set_eligibility(link, 'default')
-
-        await Bot.output_channel.send(
-            embed=Embed(
-                title=res.title,
-                url=link,
-                description=f'Eligibility reset by {interaction.user.mention}',
-                color=Color.blurple()
-            )
+        embed = Embed(
+            title=res.title,
+            url=link,
+            description=f'Eligibility reset to default',
+            color=Color.blurple()
         )
 
-        if interaction.channel != Bot.output_channel:
+        if interaction.channel == Bot.output_channel:
+            await interaction.response.send_message(embed=embed)
+        else:
+            embed.description += f' by {interaction.user.mention}'
+
+            await Bot.output_channel.send(embed=embed)
             await interaction.response.send_message(
                 f'`[{res.platform}] {res.title}`\nwill use automatically determined eligibility',
                 ephemeral=True
