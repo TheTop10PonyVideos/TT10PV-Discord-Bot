@@ -28,12 +28,17 @@ async def whitelist(link, value: bool = True):
 
 
 async def set_eligibility(link, eligibility: Literal['eligible', 'ineligible', 'default'], reason=None):
-    eligibleVal = {'eligible': True, 'ineligible': False, 'default': None}
+    eligibleVal = {'eligible': True, 'ineligible': False, 'default': None}[eligibility]
 
-    if not reason:
-        return await annotate(link, eligible=eligibleVal)
+    args = { 'eligible': eligibleVal }
 
-    return await annotate(link, eligible=eligibility, reason=reason)
+    if reason:
+        args['reason'] = reason
+    
+    if eligibility == 'eligible':
+        args['searchable'] = True
+
+    return await annotate(link, **args)
 
 
 async def set_reupload(reupload_link, original_link):
