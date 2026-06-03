@@ -2,6 +2,7 @@ from config import server_api_url, server_auth_key
 from server_actions import client
 from server_actions.responses import *
 from aiohttp import ClientError
+from typing import Literal
 
 
 async def annotate(link, **kwargs):
@@ -23,14 +24,16 @@ async def annotate(link, **kwargs):
 
 
 async def whitelist(link, value: bool = True):
-    return await annotate(link, whitelisted=value)
+    return await annotate(link, searchable=value)
 
 
-async def set_eligibility(link, eligibility, reason=None):
-    if eligibility == 'default':
-        return await annotate(link, eligibility='default')
+async def set_eligibility(link, eligibility: Literal['eligible', 'ineligible', 'default'], reason=None):
+    eligibleVal = {'eligible': True, 'ineligible': False, 'default': None}
 
-    return await annotate(link, eligibility=eligibility, reason=reason)
+    if not reason:
+        return await annotate(link, eligible=eligibleVal)
+
+    return await annotate(link, eligible=eligibility, reason=reason)
 
 
 async def set_reupload(reupload_link, original_link):
