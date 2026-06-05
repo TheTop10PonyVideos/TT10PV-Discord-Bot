@@ -162,12 +162,14 @@ class Annotating(commands.Cog):
 
     @app_commands.command(description='Manually set the eligibility of a video and a reason for it')
     @permissions.administrator()
-    async def set_eligibility(self, interaction: Interaction, link: str, eligibility: Literal['eligible', 'ineligible'], reason: str):
+    async def set_eligibility(self, interaction: Interaction, link: str, eligibility: Literal['eligible', 'ineligible'], reason: str = ''):
+        reason = reason.strip()
+
         res = await set_eligibility(link, eligibility, reason)
         embed = Embed(
             title=res.title,
             url=link,
-            description=f'Marked [{eligibility.title()}]\n\"{reason}\"',
+            description=f'Marked [{eligibility.title()}]' + (f'\n\"{reason}\"' if reason else ''),
             color=Color.blurple()
         )
 
@@ -178,7 +180,7 @@ class Annotating(commands.Cog):
 
             await Bot.output_channel.send(embed=embed)
             await interaction.response.send_message(
-                f'`[{res.platform}] {res.title}`\nmarked as {eligibility} with the following reason\n```{reason}```',
+                f'`[{res.platform}] {res.title}`\nmarked as {eligibility}' + (f' with the following reason\n```{reason}```' if reason else ''),
                 ephemeral=True
             )
 
