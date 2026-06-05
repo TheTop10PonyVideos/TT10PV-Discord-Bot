@@ -44,7 +44,7 @@ class Annotating(commands.Cog):
             description = [
                 f'**Upload Date:** {upload_date}',
                 f'**Duration:** {data['duration'] // 60}m {data['duration'] % 60}s',
-                f'**Whitelisted:** {data['whitelisted']}'
+                f'**Whitelisted:** {data['searchable']}'
             ]
 
             if data.get('reupload_of'):

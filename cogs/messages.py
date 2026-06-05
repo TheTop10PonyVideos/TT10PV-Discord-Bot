@@ -35,7 +35,7 @@ class MessageListener(commands.Cog):
         ]
 
         for video_data in result_data:
-            if video_data['whitelisted'] or not video_data['recent']:
+            if video_data['searchable'] or not video_data['recent']:
                 continue # already whitelisted or too old
             
             seconds_12hr_timeout = 60 * 60 * 12

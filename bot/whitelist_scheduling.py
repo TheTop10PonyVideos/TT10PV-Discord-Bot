@@ -7,6 +7,7 @@ from discord.ui import Button, DynamicItem, View, button
 from bot.permissions import PermissionMixin
 from discord import (
     ButtonStyle,
+    Color,
     Embed,
     Interaction,
     Message,
@@ -214,6 +215,7 @@ async def schedule_whitelist(video_data, timeout: int):
     embed = Embed(
         title=video_data['title'],
         url=video_data['link'],
+        color=Color.blurple(),
         description=f'Whitelisting <t:{whitelist_timestamp}:R>'
     ).set_image(
         url=video_data['thumbnail']
