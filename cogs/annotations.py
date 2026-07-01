@@ -113,7 +113,12 @@ class Annotating(commands.Cog):
                 await interaction.response.send_message(embed=embed)
             else:
                 embed.description += f' by {interaction.user.mention}'
+
                 await Bot.output_channel.send(embed=embed)
+                await interaction.response.send_message(
+                    f'`[{res.platform}] {res.title}`\n{prefix} whitelist',
+                    ephemeral=True
+                )
 
 
     @app_commands.command(description='Makes the form suggest using the original video\'s link when the reupload is voted for')
