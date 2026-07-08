@@ -7,7 +7,6 @@ from discord import app_commands, Interaction
 from typing import Literal
 from bot import permissions
 from server_actions import client
-from aiohttp import ClientError
 
 
 pipe_path = '/tmp/horse_vid_candidates'
@@ -51,6 +50,7 @@ class FormMessages(commands.Cog):
                 return f'Could not connect to form: {e}'
 
             asyncio.get_running_loop().add_reader(self.pipe_fd, self.on_data)
+            return
 
         if self.pipe_fd is not None:
             asyncio.get_running_loop().remove_reader(self.pipe_fd)
