@@ -85,8 +85,7 @@ class RejectButton(PermissionMixin, DynamicItem, template=r'reject:(?P<platform>
 
     async def callback(self, interaction: Interaction):
         unschedule_whitelist(self.video_key)
-
-        await update_post(interaction.message, RejectedView(), interaction.user)
+        await try_whitelist(interaction, False)
 
 
 class SuccessView(PermissionMixin, View):
