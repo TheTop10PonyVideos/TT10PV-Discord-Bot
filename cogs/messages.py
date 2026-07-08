@@ -38,8 +38,7 @@ class MessageListener(commands.Cog):
             if video_data['searchable'] or not video_data['recent']:
                 continue # already whitelisted or too old
             
-            seconds_12hr_timeout = 60 * 60 * 12
-            await schedule_whitelist(video_data, seconds_12hr_timeout)
+            await schedule_whitelist(video_data)
 
 
 async def setup(bot):

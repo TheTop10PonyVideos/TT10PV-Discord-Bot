@@ -181,7 +181,7 @@ async def delay_whitelist(video_key, link, timeout):
     await update_post(post, SuccessView())
 
 
-async def schedule_whitelist(video_data, timeout: int):
+async def schedule_whitelist(video_data, timeout = 60 * 60 * 12):
     video_key = (video_data['platform'], video_data['video_id'])
     existing_entry = whitelist_schedule.get(video_key)
 
