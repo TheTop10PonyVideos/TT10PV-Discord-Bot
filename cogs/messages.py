@@ -2,7 +2,7 @@ from discord.ext import commands
 from discord import Message
 from server_actions.annotations import get_video_data
 from config import target_guild_id, ignore_channels
-from bot.whitelist_scheduling import schedule_whitelist
+from bot.whitelist_scheduling import schedule_whitelist, is_valid_wl_candidate
 import re, asyncio
 
 
@@ -34,10 +34,7 @@ class MessageListener(commands.Cog):
             if not isinstance(result, Exception)
         ]
 
-        for video_data in result_data:
-            if video_data['searchable'] or not video_data['recent']:
-                continue # already whitelisted or too old
-            
+        for video_data in filter(is_valid_wl_candidate, result_data):            
             await schedule_whitelist(video_data)
 
 

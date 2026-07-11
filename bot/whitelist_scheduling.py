@@ -280,6 +280,18 @@ def save_schedule_cache():
             file
         )
 
+
 def set_output_channel(channel):
     global output_channel
     output_channel = channel
+
+
+def is_valid_wl_candidate(video_data):
+    return (
+        not video_data['searchable'] # Already seachable
+        and video_data['recent'] # Not too old
+        and not any( # Clearly ineligible votes are not valid candidates
+            annotation.trigger in ('Littleshy video', '<30 second video')
+            for annotation in video_data['annotations']
+        )
+    )

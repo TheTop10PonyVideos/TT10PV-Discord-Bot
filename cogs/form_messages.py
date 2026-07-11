@@ -1,7 +1,7 @@
 import os, asyncio, json
 from discord.ext import commands
 from typing import override
-from bot.whitelist_scheduling import schedule_whitelist
+from bot.whitelist_scheduling import schedule_whitelist, is_valid_wl_candidate
 from config import server_api_url, server_auth_key
 from discord import app_commands, Interaction
 from typing import Literal
@@ -71,11 +71,15 @@ class FormMessages(commands.Cog):
         chunk = os.read(self.pipe_fd, 1024)
         self.buffer += chunk
 
-        while b'\n' in self.buffer:
-            line, self.buffer = self.buffer.split(b'\n', 1)
-            line = line.decode()
+        if b'\n' not in self.buffer:
+            return
 
-            asyncio.create_task(schedule_whitelist(json.loads(line)))
+        lines = self.buffer.split(b'\n')
+        self.buffer = lines.pop()
+        video_data = [json.loads(line.decode()) for line in lines]
+
+        for candidate in filter(is_valid_wl_candidate, video_data):
+            asyncio.create_task(schedule_whitelist(candidate))
 
     @override
     async def cog_app_command_error(self, interaction, error):
