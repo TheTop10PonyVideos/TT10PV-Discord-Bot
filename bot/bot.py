@@ -26,7 +26,8 @@ class Bot(commands.Bot):
         self.add_dynamic_items(
             ws.WhitelistButton, 
             ws.RejectButton,
-            ws.RetryButton
+            ws.RetryButton,
+            ws.UndoWhitelistButton
         )
 
     async def close(self):

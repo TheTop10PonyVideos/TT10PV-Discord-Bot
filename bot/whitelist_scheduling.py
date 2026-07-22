@@ -1,9 +1,9 @@
-from config import Roles, schedule_cache_path
+from config import schedule_cache_path
 from server_actions.annotations import whitelist
 from bot import emoji
 from app_types import WLScheduleEntry
 from typing import Literal
-from discord.ui import Button, DynamicItem, View, button
+from discord.ui import Button, DynamicItem, View
 from bot.permissions import PermissionMixin
 from discord import (
     ButtonStyle,
@@ -37,14 +37,8 @@ async def try_whitelist(interaction: Interaction, value=True):
     await update_post(interaction.message, view, interaction.user)
 
 
-class MainView(View):
-    def __init__(self, video_key):
-        super().__init__(timeout=None)
-        self.add_item(WhitelistButton(video_key))
-        self.add_item(RejectButton(video_key))
-
-class WhitelistButton(PermissionMixin, DynamicItem, template=r'whitelist:(?P<platform>[^:]+):(?P<vid_id>.+)'):
-    def __init__(self, video_key):
+class WhitelistButton(PermissionMixin, DynamicItem, template=r'whitelist(?:$|:(?P<platform>[^:]+):(?P<vid_id>.+))'):
+    def __init__(self, video_key=(None, None)):
         self.video_key = video_key
         platform, vid_id = video_key
 
@@ -53,16 +47,18 @@ class WhitelistButton(PermissionMixin, DynamicItem, template=r'whitelist:(?P<pla
                 label='Whitelist',
                 emoji='📜',
                 style=ButtonStyle.primary,
-                custom_id=f'whitelist:{platform}:{vid_id}',
+                custom_id=f'whitelist:{platform}:{vid_id}' if platform is not None else 'whitelist',
             )
         )
 
     @classmethod
-    async def from_custom_id(cls, interaction: Interaction, item: Button, match: re.Match[str]):
+    async def from_custom_id(cls, interaction, item, match: re.Match[str]):
         return cls((match['platform'], match['vid_id']))
 
     async def callback(self, interaction: Interaction):
-        unschedule_whitelist(self.video_key)
+        if self.video_key is not None:
+            unschedule_whitelist(self.video_key)
+
         await try_whitelist(interaction)
 
 class RejectButton(PermissionMixin, DynamicItem, template=r'reject:(?P<platform>[^:]+):(?P<vid_id>.+)'):
@@ -87,30 +83,36 @@ class RejectButton(PermissionMixin, DynamicItem, template=r'reject:(?P<platform>
         unschedule_whitelist(self.video_key)
         await try_whitelist(interaction, False)
 
-
-class SuccessView(PermissionMixin, View):
-    def __init__(self):
+class MainView(View):
+    def __init__(self, video_key):
         super().__init__(timeout=None)
+        self.add_item(WhitelistButton(video_key))
+        self.add_item(RejectButton(video_key))
 
-    @button(label='Undo', emoji='◀️', style=ButtonStyle.primary, custom_id='undo_whitelist')
-    async def undo(self, interaction, btn):
+
+class UndoWhitelistButton(PermissionMixin, DynamicItem, template='undo'):
+    def __init__(self):
+        super().__init__(
+            Button(
+                label='Undo',
+                emoji='◀️',
+                style=ButtonStyle.primary,
+                custom_id='undo',
+            )
+        )
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls()
+
+    async def callback(self, interaction: Interaction):
         await try_whitelist(interaction, False)
 
-
-class RejectedView(PermissionMixin, View):
+class SuccessView(View):
     def __init__(self):
         super().__init__(timeout=None)
-    
-    @button(label='Whitelist', emoji='📜', style=ButtonStyle.primary, custom_id=f'whitelist')
-    async def callback(self, interaction: Interaction):
-        await try_whitelist(interaction)
+        self.add_item(UndoWhitelistButton())
 
-
-class FailView(View):
-    def __init__(self, whitelisting: bool):
-        super().__init__(timeout=None)
-        self.whitelisting = whitelisting
-        self.add_item(RetryButton(whitelisting))
 
 class RetryButton(PermissionMixin, DynamicItem, template=r'retry:(?P<value>True|False)'):
     def __init__(self, whitelisting: bool):
@@ -125,11 +127,21 @@ class RetryButton(PermissionMixin, DynamicItem, template=r'retry:(?P<value>True|
         )
 
     @classmethod
-    async def from_custom_id(cls, interaction: Interaction, item: Button, match: re.Match[str]):
+    async def from_custom_id(cls, interaction, item, match: re.Match[str]):
         return cls(match['value'] == 'True')
 
     async def callback(self, interaction: Interaction):
         await try_whitelist(interaction, self.whitelisting)
+
+class RejectedView(PermissionMixin, View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(WhitelistButton())
+
+class FailView(View):
+    def __init__(self, whitelisting: bool):
+        super().__init__(timeout=None)
+        self.add_item(RetryButton(whitelisting))
 
 
 async def update_post(post: Message, view: SuccessView | RejectedView | FailView, user: User = None):
@@ -222,7 +234,7 @@ async def schedule_whitelist(video_data, timeout = 60 * 60 * 12):
         name=eligibility.title(),
         value='\n'.join(f'- {ann['trigger']}' for ann in video_data['annotations']) or '- No issues found'
     ).set_footer(
-        text=f'By {video_data['uploader']} on {video_data['platform']}'
+        text=f'By {video_data['creator']['channel_name']} on {video_data['platform']}'
     )
 
 

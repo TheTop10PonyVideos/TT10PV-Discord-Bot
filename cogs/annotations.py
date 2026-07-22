@@ -71,7 +71,7 @@ class Annotating(commands.Cog):
                 name='Annotations',
                 value=annotation_val
             ).set_footer(
-                text=f'Uploaded to {data['platform']} by {data['uploader']}'
+                text=f'Uploaded to {data['platform']} by {data['creator']['channel_name']}'
             )
 
         await interaction.response.send_message(embed=embed)
