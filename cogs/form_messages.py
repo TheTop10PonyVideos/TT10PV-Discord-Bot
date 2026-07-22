@@ -30,34 +30,42 @@ class FormMessages(commands.Cog):
         )
 
     async def connect(self, value=True) -> str | None:
-        if value:
-            if not os.path.exists(pipe_path):
-                os.mkfifo(pipe_path)
-
-            self.pipe_fd = os.open(pipe_path, os.O_RDONLY | os.O_NONBLOCK)
-
-            try:
-                async with client.session.post(
-                    f'{server_api_url}/bot_connect',
-                    headers = { 'Cookie': f'uid={server_auth_key}' }
-                ) as response:
-                    if not response.ok:
-                        raise Exception()
-
-            except Exception as e:
-                os.close(self.pipe_fd)
-                self.pipe_fd = None
-                return f'Could not connect to form: {e}'
-
-            asyncio.get_running_loop().add_reader(self.pipe_fd, self.on_data)
-            return
-
         if self.pipe_fd is not None:
             asyncio.get_running_loop().remove_reader(self.pipe_fd)
+
+            try:
+                os.close(self.pipe_fd)
+            except OSError:
+                pass
+
+            self.pipe_fd = None
+
+        elif not value:
+            return 'Already disconnected'
+            
+        
+        if not value:
+            return
+
+        if not os.path.exists(pipe_path):
+            os.mkfifo(pipe_path)
+
+        self.pipe_fd = os.open(pipe_path, os.O_RDWR | os.O_NONBLOCK)
+
+        try:
+            async with client.session.post(
+                f'{server_api_url}/bot_connect',
+                headers = { 'Cookie': f'uid={server_auth_key}' }
+            ) as response:
+                if not response.ok:
+                    raise Exception()
+
+        except Exception as e:
             os.close(self.pipe_fd)
             self.pipe_fd = None
-        else:
-            return 'Already disconnected'
+            return f'Could not connect to form: {e}'
+
+        asyncio.get_running_loop().add_reader(self.pipe_fd, self.on_data)
 
     @override
     async def cog_load(self):
