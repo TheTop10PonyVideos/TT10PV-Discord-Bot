@@ -2,7 +2,7 @@ from discord.ext import commands
 from server_actions import client
 from pathlib import Path
 from config import output_channel_id
-from bot import whitelist_scheduling as ws
+import bot.whitelist_scheduling as ws
 
 
 class Bot(commands.Bot):
@@ -12,22 +12,20 @@ class Bot(commands.Bot):
     async def setup_hook(self):
         await client.create_session()
 
+        self.output_channel = await self.fetch_channel(output_channel_id)
+        ws.set_output_channel(self.output_channel)
+
         for file in Path('./cogs').glob('*.py'):
             await self.load_extension(f'cogs.{file.stem}')
 
         await self.tree.sync()
 
-        Bot.output_channel = await self.fetch_channel(output_channel_id)
-        ws.set_output_channel(Bot.output_channel)
-
-        for view in (ws.SuccessView, ws.RejectedView):
-            self.add_view(view())
-
         self.add_dynamic_items(
             ws.WhitelistButton, 
             ws.RejectButton,
             ws.RetryButton,
-            ws.UndoWhitelistButton
+            ws.UndoWhitelistButton,
+            ws.EligibilitySelect
         )
 
     async def close(self):

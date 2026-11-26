@@ -2,7 +2,8 @@ from discord.ext import commands
 from discord import Message
 from server_actions.annotations import get_video_data
 from config import target_guild_id, ignore_channels
-from bot.whitelist_scheduling import schedule_whitelist, is_valid_wl_candidate
+from bot.whitelist_scheduling import schedule_whitelist
+from temp import is_valid_wl_candidate
 import re, asyncio
 
 
@@ -34,9 +35,9 @@ class MessageListener(commands.Cog):
             if not isinstance(result, Exception)
         ]
 
-        for video_data in filter(is_valid_wl_candidate, result_data):            
+        for video_data in filter(is_valid_wl_candidate, result_data):
             await schedule_whitelist(video_data)
 
 
 async def setup(bot):
-    await bot.add_cog(MessageListener(bot))
+    await bot.add_cog(MessageListener())

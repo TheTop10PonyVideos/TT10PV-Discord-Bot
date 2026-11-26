@@ -1,96 +1,238 @@
-from config import schedule_cache_path
-from server_actions.annotations import whitelist
-from bot import emoji
 from app_types import WLScheduleEntry
-from typing import Literal
-from discord.ui import Button, DynamicItem, View
-from bot.permissions import PermissionMixin
+from bot import emoji as bot_emoji
+from bot.permissions import PermissionMixin, RoleLevel
+from config import schedule_cache_path
+from server_actions.annotations import whitelist, set_eligibility, set_reupload
+from discord.ui import Button, DynamicItem
 from discord import (
     ButtonStyle,
     Color,
-    Embed,
     Interaction,
+    MediaGalleryItem,
     Message,
     NotFound,
+    SelectOption,
     TextChannel,
+    TextStyle,
     User
 )
-import asyncio, time, json, re
+from discord.ui import (
+    Container,
+    LayoutView,
+    TextDisplay,
+)
+from typing import Literal
+import bot.component_ids as cid
+import discord.ui as ui
+import asyncio, time, json, re, emoji, json
 
 
 whitelist_schedule: dict[tuple, WLScheduleEntry | Literal['pending']] = {}
+
 output_channel: TextChannel = None
+
+with open('rules.json') as file:
+    rules = json.load(file)
 
 
 async def try_whitelist(interaction: Interaction, value=True):
-    """Attempt to set a searchable value for a video via button interaction, and update its view accordingly"""
-    await interaction.response.defer()
-    embed = interaction.message.embeds[0].copy()
+    """Attempt to set a searchable value for a video via button interaction, and update its post accordingly"""
+    post = MainView.from_message(interaction.message)
+    failed = False
 
     try:
-        await whitelist(embed.url, value)
-        view = SuccessView() if value else RejectedView()
+        await whitelist(post.get_video_link(), value)
+
     except Exception as e:
         print(e)
-        view = FailView(value)
+        failed = True
 
-    await update_post(interaction.message, view, interaction.user)
+    await MainView.from_message(interaction.message) \
+        .whitelist_update(
+            value,
+            interaction.user,
+            failed=failed
+        ).send_edit()
 
 
-class WhitelistButton(PermissionMixin, DynamicItem, template=r'whitelist(?:$|:(?P<platform>[^:]+):(?P<vid_id>.+))'):
-    def __init__(self, video_key=(None, None)):
-        self.video_key = video_key
-        platform, vid_id = video_key
+class MainView(LayoutView):
+    def __init__(self, video_data, whitelist_timestamp):
+        super().__init__()
+        video_key = get_video_key(video_data)
 
+        # eligible first since that only comes from manual checks
+        priority = ['eligible', 'ineligible', 'maybe ineligible']
+    
+        for t in priority:
+            if any(ann['type'] == t for ann in video_data['annotations']):
+                eligibility = t
+                break
+        else:
+            eligibility = 'eligible'
+
+        title = emoji.replace_emoji(video_data['title'], ' ')
+
+        title = TextDisplay(
+            f'### [{title}]({video_data['link']})',
+            id=cid.TITLE
+        )
+
+        wl_status = TextDisplay(
+            f'Whitelisting <t:{whitelist_timestamp}:R>',
+            id=cid.WL_STATUS
+        )
+
+        annotations = TextDisplay(
+            f'### {eligibility.title()}\n{
+                '\n'.join(f'- {ann['trigger']}'
+                for ann in video_data['annotations'])
+                or '- No issues found'
+            }',
+            id=cid.ANNOTATIONS
+        )
+
+        container = Container(
+            title,
+            wl_status,
+            annotations,
+
+            ui.MediaGallery(MediaGalleryItem(media=video_data['thumbnail'])),
+
+            TextDisplay(f'By {video_data['creator']['channel_name']} on {video_data['platform']}'),
+
+            ui.ActionRow(
+                WhitelistButton(),
+                RejectButton(),
+                ReuploadButton(),
+                id=cid.BUTTONS
+            ),
+            ui.ActionRow(EligibilitySelect(video_key)),
+
+            accent_colour=Color.blurple()
+        )
+
+        self.add_item(container)
+
+
+    @classmethod
+    def from_message(cls, message: Message):
+        view = super().from_message(message)
+
+        self = cls.__new__(cls)
+        LayoutView.__init__(self)
+
+        for item in view.children:
+            self.add_item(item)
+
+        self.message = message
+        return self
+
+    def whitelist_update(self, whitelisting: bool, user: User = None, *, failed=False):
+        wl_status: TextDisplay = self.find_item(cid.WL_STATUS)
+        buttons: ui.ActionRow = self.find_item(cid.BUTTONS)
+        buttons.clear_items()
+
+        if failed:
+            wl_status.content = ('Failed to whitelist ' if whitelisting else 'Failed to undo whitelist ') + bot_emoji.pinkie_PANIC_AHHH_WTF
+            buttons.add_item(RetryButton(whitelisting))
+
+        elif whitelisting:
+            wl_status.content = 'Whitelisted ' + bot_emoji.pinkie_affirm
+            buttons.add_item(UndoWhitelistButton())
+
+        else:
+            wl_status.content = 'Not whitelisted'
+            buttons.add_item(WhitelistButton())
+
+        buttons.add_item(ReuploadButton())
+
+        if user is not None:
+            wl_status.content += f'\nBy {user.mention}'
+
+        return self
+
+    def eligibility_update(self, judgement, reason: str = None):
+        annotations: TextDisplay = self.find_item(cid.ANNOTATIONS)
+        annotations.content = (
+            f'### {judgement.title()}\n'
+            f'- {reason or 'Manually Checked'}'
+        )
+
+        return self
+
+    def reupload_update(self, orig_title, orig_uploader):
+        return self
+
+    def get_video_link(self) -> str:
+        title = self.find_item(cid.TITLE).content
+        return title[title.rfind('](') + 2 : -1]
+
+    async def send_edit(self):
+        await self.message.edit(view=self)
+
+
+class WhitelistButton(
+    PermissionMixin,
+    DynamicItem,
+    permitted=RoleLevel.SERIES_STAFF,
+    template=r'whitelist'
+):
+    def __init__(self):
         super().__init__(
             Button(
                 label='Whitelist',
                 emoji='📜',
                 style=ButtonStyle.primary,
-                custom_id=f'whitelist:{platform}:{vid_id}' if platform is not None else 'whitelist',
+                custom_id=f'whitelist',
             )
         )
 
     @classmethod
-    async def from_custom_id(cls, interaction, item, match: re.Match[str]):
-        return cls((match['platform'], match['vid_id']))
+    async def from_custom_id(cls, interaction, item, match):
+        return cls()
 
     async def callback(self, interaction: Interaction):
-        if self.video_key is not None:
-            unschedule_whitelist(self.video_key)
+        await interaction.response.defer()
+
+        video_key = get_bearer_key(self.view)
+        unschedule_whitelist(video_key)
 
         await try_whitelist(interaction)
 
-class RejectButton(PermissionMixin, DynamicItem, template=r'reject:(?P<platform>[^:]+):(?P<vid_id>.+)'):
-    def __init__(self, video_key):
-        self.video_key = video_key
-        platform, vid_id = video_key
-
+class RejectButton(
+    PermissionMixin,
+    DynamicItem,
+    permitted=RoleLevel.SERIES_STAFF,
+    template=r'reject'
+):
+    def __init__(self):
         super().__init__(
             Button(
                 label='Reject',
                 emoji='❌',
                 style=ButtonStyle.primary,
-                custom_id=f'reject:{platform}:{vid_id}',
+                custom_id=f'reject',
             )
         )
 
     @classmethod
-    async def from_custom_id(cls, interaction: Interaction, item: Button, match: re.Match[str]):
-        return cls((match['platform'], match['vid_id']))
+    async def from_custom_id(cls, interaction, item, match):
+        return cls()
 
     async def callback(self, interaction: Interaction):
-        unschedule_whitelist(self.video_key)
+        await interaction.response.defer()
+
+        video_key = get_bearer_key(self.view)
+        unschedule_whitelist(video_key)
+
         await try_whitelist(interaction, False)
 
-class MainView(View):
-    def __init__(self, video_key):
-        super().__init__(timeout=None)
-        self.add_item(WhitelistButton(video_key))
-        self.add_item(RejectButton(video_key))
-
-
-class UndoWhitelistButton(PermissionMixin, DynamicItem, template='undo'):
+class UndoWhitelistButton(
+    PermissionMixin,
+    DynamicItem,
+    permitted=RoleLevel.SERIES_STAFF,
+    template='undo'
+):
     def __init__(self):
         super().__init__(
             Button(
@@ -106,15 +248,15 @@ class UndoWhitelistButton(PermissionMixin, DynamicItem, template='undo'):
         return cls()
 
     async def callback(self, interaction: Interaction):
+        await interaction.response.defer()
         await try_whitelist(interaction, False)
 
-class SuccessView(View):
-    def __init__(self):
-        super().__init__(timeout=None)
-        self.add_item(UndoWhitelistButton())
-
-
-class RetryButton(PermissionMixin, DynamicItem, template=r'retry:(?P<value>True|False)'):
+class RetryButton(
+    PermissionMixin,
+    DynamicItem,
+    permitted=RoleLevel.SERIES_STAFF,
+    template=r'retry:(?P<value>True|False)'
+):
     def __init__(self, whitelisting: bool):
         self.whitelisting = whitelisting
 
@@ -122,7 +264,7 @@ class RetryButton(PermissionMixin, DynamicItem, template=r'retry:(?P<value>True|
             Button(
                 label='Retry',
                 emoji='🔄',
-                custom_id=f'retry:{whitelisting}',
+                custom_id=f'retry:{whitelisting}'
             )
         )
 
@@ -131,37 +273,141 @@ class RetryButton(PermissionMixin, DynamicItem, template=r'retry:(?P<value>True|
         return cls(match['value'] == 'True')
 
     async def callback(self, interaction: Interaction):
+        await interaction.response.defer()
         await try_whitelist(interaction, self.whitelisting)
 
-class RejectedView(PermissionMixin, View):
+class ReuploadButton(
+    PermissionMixin,
+    DynamicItem,
+    permitted=RoleLevel.SERIES_STAFF,
+    template='set_reupload'
+):
     def __init__(self):
-        super().__init__(timeout=None)
-        self.add_item(WhitelistButton())
+        super().__init__(
+            Button(
+                label='Reupload',
+                emoji='🔗',
+                custom_id=f'set_reupload',
+                style=ButtonStyle.primary,
+                disabled=True # TODO
+            )
+        )
 
-class FailView(View):
-    def __init__(self, whitelisting: bool):
-        super().__init__(timeout=None)
-        self.add_item(RetryButton(whitelisting))
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls()
 
-
-async def update_post(post: Message, view: SuccessView | RejectedView | FailView, user: User = None):
-    embed = post.embeds[0].copy()
-
-    match view:
-        case SuccessView():
-            embed.description = 'Whitelisted ' + emoji.pinkie_affirm
-        case RejectedView():
-            embed.description = 'Not whitelisted'
-        case FailView():
-            embed.description = ('Failed to whitelist ' if view.whitelisting else 'Failed to undo whitelist ') + emoji.pinkie_PANIC_AHHH_WTF
-
-    if user is not None:
-        embed.description += f'\nBy {user.mention}'
-
-    await post.edit(embed=embed, view=view)
+    async def callback(self, interaction: Interaction):
+        await interaction.response.send_modal(SetReuploadModal())
 
 
-async def get_post(video_key):
+class EligibilitySelect(
+    PermissionMixin,
+    DynamicItem,
+    template=r'eligibility:.+'
+):
+    def __init__(self, video_key):
+        select = ui.Select(
+            id=cid.KEY_BEARER,
+            custom_id=f'eligibility:{':'.join(video_key)}',
+            placeholder='Set Eligibility...',
+            options=(
+                [SelectOption(label='Eligible')] +
+                [
+                    SelectOption(
+                        label=rule['label'],
+                        description=rule['description'],
+                    )
+                    for rule in rules
+                ] +
+                [SelectOption(label='Other')]
+            )
+        )
+
+        super().__init__(select)
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item: ui.Select, match):
+        return cls(item.custom_id.split(':')[1:])
+
+    async def callback(self, interaction: Interaction):
+        selection = self.item.values[0]
+        eligible = selection == 'Eligible'
+
+        prompt = (
+            'Why is this video ineligible?'
+            if selection == 'Other'
+            else
+            'Why is this video eligible? (Optional)'
+            if eligible
+            else None
+        )
+
+        if prompt is not None:
+            return await interaction.response.send_modal(ManualAnnotationModal(prompt, eligible))
+
+        await interaction.response.defer()
+        await do_eligibility_update(interaction, eligible, selection)
+
+class ManualAnnotationModal(ui.Modal, title='Manual Annotation'):
+    def __init__(self, prompt, eligible):
+        super().__init__()
+        self.eligible = eligible
+        self.reason = ui.Label(
+            text=prompt,
+            component=ui.TextInput(
+                style=TextStyle.paragraph,
+                required=not eligible
+            )
+        )
+        self.add_item(self.reason)
+
+    async def on_submit(self, interaction: Interaction):
+        await interaction.response.defer()
+        await do_eligibility_update(interaction, self.eligible, self.reason.component.value.strip())
+
+async def do_eligibility_update(interaction: Interaction, eligible: bool, reason):
+    post = MainView.from_message(interaction.message)
+    url = post.get_video_link()
+
+    if post.find_item(cid.WL_STATUS).content.startswith('Whitelisting'):
+        key = get_bearer_key(post)
+        unschedule_whitelist(key)
+
+        try:
+            await whitelist(url, eligible)
+        except Exception as e:
+            print(e)
+            return await post.whitelist_update(eligible, interaction.user, failed=True).send_edit()
+
+        post.whitelist_update(eligible, interaction.user)
+
+    try:
+        await set_eligibility(post.get_video_link(), 'eligible' if eligible else 'ineligible', reason)
+    except Exception as e:
+        print(e)
+        await post.send_edit()
+        await interaction.followup.send('Soz. An error occured ;-;', ephemeral=True)
+        return
+    
+    await post.eligibility_update('eligible' if eligible else 'ineligible', reason).send_edit()
+
+
+class SetReuploadModal(ui.Modal, title='Set Reupload'):
+    original_link = ui.Label(text='Enter the link that this video is a reupload of', component=ui.TextInput(style=TextStyle.short))
+
+    async def on_submit(self, interaction: Interaction):
+        post = MainView.from_interaction(interaction)
+        try:
+            await set_reupload(post.get_video_link(), self.original_link.component.value)
+        except Exception as e:
+            print(e)
+            await interaction.response.send_message('Soz. An error occured ;-;', ephemeral=True)
+
+        await post.reupload_update().send_edit()
+
+
+async def find_post(video_key):
     """Get the Message object using its id if it exists, or None if it was not found"""
     post_id = whitelist_schedule.get(video_key, {}).get('post_id')
 
@@ -169,38 +415,38 @@ async def get_post(video_key):
         return
 
     try:
-        return await output_channel.fetch_message(post_id)
+        return MainView.from_message(await output_channel.fetch_message(post_id))
     except NotFound:
         return
 
 
 async def delay_whitelist(video_key, link, timeout):
     await asyncio.sleep(timeout)
-    post = await get_post(video_key)
+    post = await find_post(video_key)
 
     if not post:
         del whitelist_schedule[video_key]
         return
 
+    failed = False
     try:
         await whitelist(link)
     except Exception as e:
         print(e)
-        await update_post(post, FailView(True))
-        return
+        failed = True
 
-    await update_post(post, SuccessView())
+    await post.whitelist_update(True, failed=failed).send_edit()
 
 
 async def schedule_whitelist(video_data, timeout = 60 * 60 * 12):
-    video_key = (video_data['platform'], video_data['video_id'])
+    video_key = get_video_key(video_data)
     existing_entry = whitelist_schedule.get(video_key)
 
     if existing_entry is not None:
         if existing_entry == 'pending':
             return # post is already about to be made
 
-        post = await get_post(video_key)
+        post = await find_post(video_key)
 
         if post:
             return # already scheduled and post still exists
@@ -211,34 +457,9 @@ async def schedule_whitelist(video_data, timeout = 60 * 60 * 12):
 
     whitelist_schedule[video_key] = 'pending'
 
-    # eligible first since that only comes from manual checks
-    priority = ['eligible', 'ineligible', 'maybe ineligible']
-
-    for t in priority:
-        if any(ann['type'] == t for ann in video_data['annotations']):
-            eligibility = t
-            break
-    else:
-        eligibility = 'eligible'
-
     whitelist_timestamp = int(time.time()) + timeout
 
-    embed = Embed(
-        title=video_data['title'],
-        url=video_data['link'],
-        color=Color.blurple(),
-        description=f'Whitelisting <t:{whitelist_timestamp}:R>'
-    ).set_image(
-        url=video_data['thumbnail']
-    ).add_field(
-        name=eligibility.title(),
-        value='\n'.join(f'- {ann['trigger']}' for ann in video_data['annotations']) or '- No issues found'
-    ).set_footer(
-        text=f'By {video_data['creator']['channel_name']} on {video_data['platform']}'
-    )
-
-
-    post = await output_channel.send(embed=embed, view=MainView(video_key))
+    post = await output_channel.send(view=MainView(video_data, whitelist_timestamp))
 
     whitelist_schedule[video_key] = {
         'link': video_data['link'],
@@ -246,6 +467,16 @@ async def schedule_whitelist(video_data, timeout = 60 * 60 * 12):
         'task': asyncio.create_task(delay_whitelist(video_key, video_data['link'], timeout)),
         'timestamp': whitelist_timestamp
     }
+
+
+def get_video_key(video_data):
+    return video_data['platform'], video_data['video_id']
+
+def get_bearer_key(post: LayoutView):
+    bearer: ui.Select = post.find_item(cid.KEY_BEARER)
+    _, platform, vid_id = bearer.custom_id.split(':')
+
+    return platform, vid_id
 
 
 def unschedule_whitelist(video_key):
@@ -296,13 +527,3 @@ def save_schedule_cache():
 def set_output_channel(channel):
     global output_channel
     output_channel = channel
-
-
-def is_valid_wl_candidate(video_data):
-    return (
-        not video_data['searchable'] # Already seachable
-        and not any( # Clearly ineligible votes are not valid candidates
-            annotation['trigger'] in ('Littleshy video', '<30 second video', 'Video too old')
-            for annotation in video_data['annotations']
-        )
-    )

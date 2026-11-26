@@ -10,6 +10,6 @@ target_guild_id = int(os.getenv('GUILD_ID'))
 ignore_channels = [int(channel_id) for channel_id in os.getenv('IGNORE_CHANNELS').split(',')]
 schedule_cache_path = pathlib.Path('schedule_cache.json')
 
-class Roles:
-    MODERATOR = 749754741399224422
-    SERIES_STAFF = 749330617505939547
+class RoleLevel:
+    MODERATOR = (749754741399224422,)
+    SERIES_STAFF = (*MODERATOR, 749330617505939547)

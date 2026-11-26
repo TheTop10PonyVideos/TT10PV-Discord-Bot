@@ -1,20 +1,15 @@
 from discord.ext import commands
 from typing import Literal, override
 from datetime import datetime
-from bot import Bot, permissions
-from bot.whitelist_scheduling import (
-    SuccessView,
-    RejectedView,
-    update_post,
-    unschedule_whitelist,
-    get_post
-)
+from bot import permissions
+from bot.whitelist_scheduling import find_post, unschedule_whitelist
 from discord import (
     app_commands,
     Interaction,
     Embed,
     Color
 )
+from discord.abc import GuildChannel
 from server_actions.annotations import (
     whitelist,
     set_eligibility,
@@ -28,6 +23,10 @@ from config import (
 
 
 class Annotating(commands.Cog):
+    def __init__(self, output_channel: GuildChannel):
+        super().__init__()
+        self.output_channel = output_channel
+
     @app_commands.command(description='Get the metadata and annotations associated with a video')
     async def get_details(self, interaction: Interaction, link: str):
         data = await get_video_data(link)
@@ -79,19 +78,19 @@ class Annotating(commands.Cog):
 
     @app_commands.command(description='Set whether the video can appear in the form search results. Default value is \'True\'')
     @permissions.series_staff()
-    async def set_searchable(self, interaction: Interaction, link: str, value: bool = True):
+    async def set_whitelisted(self, interaction: Interaction, link: str, value: bool = True):
         res = await whitelist(link, value)
         video_key = (res.platform, res.video_id)
 
-        post = await get_post(video_key)
+        post = await find_post(video_key)
         unschedule_whitelist(video_key)
 
         prefix = 'Added to' if value else 'Removed from'
 
         if post:
-            await update_post(post, SuccessView() if value else RejectedView(), interaction.user)
+            await post.whitelist_update(value, interaction.user).send_edit()
 
-            if interaction.channel == Bot.output_channel:
+            if interaction.channel == self.output_channel:
                 await interaction.response.send_message(
                     f'Updated whitelist status of https://discordapp.com/channels/{target_guild_id}/{output_channel_id}/{post.id}',
                     ephemeral=True
@@ -109,12 +108,12 @@ class Annotating(commands.Cog):
                 color=Color.blurple()
             )
 
-            if interaction.channel == Bot.output_channel:
+            if interaction.channel == self.output_channel:
                 await interaction.response.send_message(embed=embed)
             else:
                 embed.description += f' by {interaction.user.mention}'
 
-                await Bot.output_channel.send(embed=embed)
+                await self.output_channel.send(embed=embed)
                 await interaction.response.send_message(
                     f'`[{res.platform}] {res.title}`\n{prefix} whitelist',
                     ephemeral=True
@@ -130,12 +129,12 @@ class Annotating(commands.Cog):
             color=Color.blurple()
         )
 
-        if interaction.channel == Bot.output_channel:
+        if interaction.channel == self.output_channel:
             await interaction.response.send_message(embed=embed)
         else:
             embed.description += f' by {interaction.user.mention}'
 
-            await Bot.output_channel.send(embed=embed)
+            await self.output_channel.send(embed=embed)
             await interaction.response.send_message(
                 f'`[{res.reupload_platform}] {res.reupload_title}`\nset as a reupload of\n`[{res.original_platform}] {res.original_title}`',
                 ephemeral=True
@@ -153,12 +152,12 @@ class Annotating(commands.Cog):
         )
 
 
-        if interaction.channel == Bot.output_channel:
+        if interaction.channel == self.output_channel:
             await interaction.response.send_message(embed=embed)
         else:
             embed.description += f' by {interaction.user.mention}'
 
-            await Bot.output_channel.send(embed=embed)
+            await self.output_channel.send(embed=embed)
             await interaction.response.send_message(
                 f'`[{res.reupload_platform}] {res.reupload_title}`\nwill not be treated as a reupload',
                 ephemeral=True
@@ -178,12 +177,12 @@ class Annotating(commands.Cog):
             color=Color.blurple()
         )
 
-        if interaction.channel == Bot.output_channel:
+        if interaction.channel == self.output_channel:
             await interaction.response.send_message(embed=embed)
         else:
             embed.description += f'\n\nBy {interaction.user.mention}'
 
-            await Bot.output_channel.send(embed=embed)
+            await self.output_channel.send(embed=embed)
             await interaction.response.send_message(
                 f'`[{res.platform}] {res.title}`\nmarked as {eligibility}' + (f' with the following reason\n```{reason}```' if reason else ''),
                 ephemeral=True
@@ -200,12 +199,12 @@ class Annotating(commands.Cog):
             color=Color.blurple()
         )
 
-        if interaction.channel == Bot.output_channel:
+        if interaction.channel == self.output_channel:
             await interaction.response.send_message(embed=embed)
         else:
             embed.description += f' by {interaction.user.mention}'
 
-            await Bot.output_channel.send(embed=embed)
+            await self.output_channel.send(embed=embed)
             await interaction.response.send_message(
                 f'`[{res.platform}] {res.title}`\nwill use automatically determined eligibility',
                 ephemeral=True
@@ -221,4 +220,4 @@ class Annotating(commands.Cog):
 
 
 async def setup(bot):
-    await bot.add_cog(Annotating())
+    await bot.add_cog(Annotating(bot.output_channel))

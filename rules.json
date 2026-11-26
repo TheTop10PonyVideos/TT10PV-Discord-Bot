@@ -1,0 +1,38 @@
+[
+    {
+        "label": "4a. Short length",
+        "descr limit": "Descriptions are limitted to 100 characters. This is 100 characters for reference.                  ",
+        "description": "Videos must be 30 seconds or longer not including intros/outros/credits/etc.",
+        "full": "Videos must be 30 seconds or longer not including intros/outros/credits/etc."
+    },
+    {
+        "label": "4b. Unsuitable vote",
+        "description": "Videos which are highly derivative, intended for children, very low effort, etc.",
+        "full": "Videos which are highly derivative, intended for children, very low effort, etc. are not eligible."
+    },
+    {
+        "label": "4d. Questionable content",
+        "description": "Videos with primary focus to offend, disturb, shock, or are overtly sexual/fetishistic in nature",
+        "full": "Videos with a primary focus to offend, disturb, shock, or videos that are overtly sexual/fetishistic in nature are not eligible. Most mature content is fine as long as it's comedic/satirical and/or has significant artistic merit."
+    },
+    {
+        "label": "4e. \"Pony\" definition",
+        "description": "Videos must primarily focus on My Little Pony, bronies, or be widely adopted by the brony community.",
+        "full": "Videos must have My Little Pony and/or bronies as the primary focus, or have been widely adopted by the brony community."
+    },
+    {
+        "label": "4f. \"Video\" definition",
+        "description": "Must be completed videos with visual effort and appeal. Videos must be in a final finished state.",
+        "full": "Votes must be actual, completed videos with visual effort and appeal. Videos must be in a final state with a more-complete version not expected to release."
+    },
+    {
+        "label": "4g. Re-uploads/deleted videos",
+        "description": "Older videos that have been re-uploaded are not eligible.",
+        "full": "Older videos that have been re-uploaded are not eligible."
+    },
+    {
+        "label": "5b. Non-community videos",
+        "description": "Don't vote for non-community videos. For example: videos made by large companies such as Hasbro.",
+        "full": "Don't vote for non-community videos. For example: videos made by large companies such as Hasbro are not eligible."
+    }
+]

@@ -1,12 +1,13 @@
-import os, asyncio, json
-from discord.ext import commands
-from typing import override
-from bot.whitelist_scheduling import schedule_whitelist, is_valid_wl_candidate
+from bot import permissions
+from bot.whitelist_scheduling import schedule_whitelist
 from config import server_api_url, server_auth_key
 from discord import app_commands, Interaction
-from typing import Literal
-from bot import permissions
+from discord.ext import commands
+from discord.abc import GuildChannel
 from server_actions import client
+from typing import override, Literal
+from temp import is_valid_wl_candidate
+import os, asyncio, json
 
 
 pipe_path = '/tmp/horse_vid_candidates'
@@ -14,10 +15,10 @@ pipe_path = '/tmp/horse_vid_candidates'
 class FormMessages(commands.Cog):
     """A cog that recieves video data from the form so that those not shared in the discord server can still easily be made searchable"""
 
-    def __init__(self, bot):
-        self.bot = bot
+    def __init__(self, output_channel: GuildChannel):
         self.buffer = b''
         self.pipe_fd = None
+        self.output_channel = output_channel
 
     @app_commands.command(description='Connect the form to have the bot receive search result candidates from it')
     @permissions.administrator()
@@ -96,5 +97,6 @@ class FormMessages(commands.Cog):
         else:
             await interaction.response.send_message(str(error), ephemeral=True)
 
+
 async def setup(bot):
-    await bot.add_cog(FormMessages(bot))
+    await bot.add_cog(FormMessages(bot.output_channel))
