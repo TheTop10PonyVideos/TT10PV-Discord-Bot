@@ -490,6 +490,7 @@ def unschedule_whitelist(video_key):
     if entry and entry != 'pending' and entry['task'] is not None:
         entry['task'].cancel()
         entry['task'] = None
+        entry['timestamp'] = None
 
 
 def load_schedule_cache():
@@ -502,17 +503,20 @@ def load_schedule_cache():
         cache = [[tuple(entry['key']), entry['link'], entry['post_id'], entry['timestamp']] for entry in cache]
 
         for key, link, post_id, timestamp in cache:
-            remaing_time = timestamp - int(time.time())
+            remaining_time = None
 
-            if remaing_time < -60 * 60 * 24 * 32: # Just over 1 month
-                continue # Stop keeping track of old posts
+            if timestamp is not None:
+                remaining_time = timestamp - int(time.time())
+
+                if remaining_time < -60 * 60 * 24 * 32: # Just over 1 month
+                    continue # Stop keeping track of old posts
 
             # TODO: update post when remaining_time < 0
 
             whitelist_schedule[key] = {
                 'link': link,
                 'post_id': post_id,
-                'task': None if remaing_time < 0 else asyncio.create_task(delay_whitelist(key, link, remaing_time)),
+                'task': None if remaining_time is None or remaining_time < 0 else asyncio.create_task(delay_whitelist(key, link, remaining_time)),
                 'timestamp': timestamp
             }
 
