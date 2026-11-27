@@ -24,7 +24,7 @@ from discord.ui import (
 from typing import Literal
 import bot.component_ids as cid
 import discord.ui as ui
-import asyncio, time, json, re, emoji, json
+import asyncio, time, json, re, emoji
 
 
 whitelist_schedule: dict[tuple, WLScheduleEntry | Literal['pending']] = {}
@@ -347,7 +347,9 @@ class EligibilitySelect(
             return await interaction.response.send_modal(ManualAnnotationModal(prompt, eligible))
 
         await interaction.response.defer()
-        await do_eligibility_update(interaction, eligible, selection)
+
+        reason = next(rule for rule in rules if rule['label'] == selection)['full']
+        await do_eligibility_update(interaction, eligible, selection, reason)
 
 class ManualAnnotationModal(ui.Modal, title='Manual Annotation'):
     def __init__(self, prompt, eligible):
@@ -364,9 +366,12 @@ class ManualAnnotationModal(ui.Modal, title='Manual Annotation'):
 
     async def on_submit(self, interaction: Interaction):
         await interaction.response.defer()
-        await do_eligibility_update(interaction, self.eligible, self.reason.component.value.strip())
 
-async def do_eligibility_update(interaction: Interaction, eligible: bool, reason):
+        reason = self.reason.component.value.strip()
+        label = reason if len(reason) < 37 else (reason[:37] + '...')
+        await do_eligibility_update(interaction, self.eligible, label or 'Manually checked', reason)
+
+async def do_eligibility_update(interaction: Interaction, eligible: bool, label, reason):
     post = MainView.from_message(interaction.message)
     url = post.get_video_link()
 
@@ -390,7 +395,7 @@ async def do_eligibility_update(interaction: Interaction, eligible: bool, reason
         await interaction.followup.send('Soz. An error occured ;-;', ephemeral=True)
         return
     
-    await post.eligibility_update('eligible' if eligible else 'ineligible', reason).send_edit()
+    await post.eligibility_update('eligible' if eligible else 'ineligible', label).send_edit()
 
 
 class SetReuploadModal(ui.Modal, title='Set Reupload'):
